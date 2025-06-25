@@ -1,15 +1,31 @@
+use crossterm::event::{self, Event};
+use midir::{MidiOutput, MidiOutputPort};
+use ratatui::{Frame, text::Text};
 use std::error::Error;
 use std::io::{Write, stdin, stdout};
 use std::thread::sleep;
 use std::time::Duration;
 
-use midir::{MidiOutput, MidiOutputPort};
-
 fn main() {
+    let mut terminal = ratatui::init();
     match run() {
         Ok(_) => (),
         Err(err) => println!("Error: {}", err),
     }
+
+    loop {
+        terminal.draw(draw).expect("failed to draw frame");
+        if matches!(event::read().expect("failed to read event"), Event::Key(_)) {
+            break;
+        }
+    }
+
+    ratatui::restore();
+}
+
+fn draw(frame: &mut Frame) {
+    let text = Text::raw("Hello World!");
+    frame.render_widget(text, frame.area());
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
