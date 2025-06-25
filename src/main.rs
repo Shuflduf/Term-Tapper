@@ -1,14 +1,15 @@
-use std::io;
+use std::{error::Error, io, thread::sleep, time::Duration};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use midir::{MidiOutput, MidiOutputPort};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::Stylize,
-    symbols::border,
+    symbols::border::{self, ROUNDED},
     text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Tabs, Widget},
+    widgets::{Block, Paragraph, Tabs, Widget},
 };
 
 #[derive(Default)]
@@ -33,11 +34,17 @@ impl App {
             .split(frame.area());
 
         frame.render_widget(
-            Tabs::new(vec!["Gaming 1", "Gaming 2", "Gaming 3"]).select(self.current_tab),
+            Tabs::new(vec!["Tracks", "Composition", "Preview"]).select(self.current_tab),
             layout[0],
         );
         frame.render_widget(
-            Paragraph::new("pookie").block(Block::new().borders(Borders::ALL)),
+            match self.current_tab {
+                0 => Paragraph::new("tracks go here mayb")
+                    .block(Block::bordered().border_set(ROUNDED)),
+                1 => Paragraph::new("uhhhh").block(Block::bordered().border_set(ROUNDED)),
+                2 => Paragraph::new("sick af preview").block(Block::bordered().border_set(ROUNDED)),
+                _ => Paragraph::new("what the fuck did you do"),
+            },
             layout[1],
         );
     }
@@ -56,19 +63,16 @@ impl App {
         // if key_event.code == KeyCode::Char('q') {
         //     self.exit();
         // }
+        const SHIFT_NUM_KEYS: [char; 3] = ['!', '@', '#'];
         match key_event.code {
-            // KeyCode::Char(c @ '1'..='3') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-            //     self.current_tab = (c.to_digit(10).unwrap() as usize) - 1
-            // }
-            KeyCode::Char(c) if ['!', '@', '#'].contains(&c) => {
-                let index = ['!', '@', '#'].iter().position(|&x| x == c);
+            KeyCode::Char(c) if SHIFT_NUM_KEYS.contains(&c) => {
+                let index = SHIFT_NUM_KEYS.iter().position(|&x| x == c);
                 self.current_tab = index.unwrap()
             }
+            KeyCode::Char(' ') => play_sound().unwrap(),
 
             KeyCode::Char('q') => self.exit(),
-            _ => {
-                println!("{:?}", key_event)
-            }
+            _ => {}
         }
     }
 
@@ -91,6 +95,39 @@ impl Widget for &App {
             .block(block)
             .render(area, buf);
     }
+}
+
+fn play_sound() -> Result<(), Box<dyn Error>> {
+    let midi_out = MidiOutput::new("My Test Output")?;
+
+    // Get an output port (read from console if multiple are available)
+    let out_ports = midi_out.ports();
+    let out_port: &MidiOutputPort = match out_ports.len() {
+        0 => return Err("no output port found".into()),
+        1.. => &out_ports[0],
+    };
+
+    let mut conn_out = midi_out.connect(out_port, "midir-test")?;
+    {
+        // Define a new scope in which the closure `play_note` borrows conn_out, so it can be called easily
+        let mut play_note = |note: u8, duration: u64| {
+            const NOTE_ON_MSG: u8 = 0x90;
+            const NOTE_OFF_MSG: u8 = 0x80;
+            const VELOCITY: u8 = 0x64;
+            // We're ignoring errors in here
+            let _ = conn_out.send(&[NOTE_ON_MSG, note, VELOCITY]);
+            sleep(Duration::from_millis(duration * 150));
+            let _ = conn_out.send(&[NOTE_OFF_MSG, note, VELOCITY]);
+        };
+
+        play_note(74, 1);
+        play_note(74, 1);
+        play_note(86, 1);
+        play_note(0, 1);
+        play_note(81, 1);
+    }
+    sleep(Duration::from_millis(150));
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
