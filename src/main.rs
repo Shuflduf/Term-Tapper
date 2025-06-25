@@ -6,16 +6,50 @@ use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
-    style::Stylize,
+    style::{Color, Style, Stylize},
     symbols::border::{self, ROUNDED},
     text::{Line, Text},
     widgets::{Block, Paragraph, Tabs, Widget},
 };
 
+const TRACKS_NUM: usize = 6;
+
+#[derive(Default)]
+pub struct TracksView {
+    selected_track: usize,
+}
+impl TracksView {
+    fn new(selected_track: usize) -> Self {
+        TracksView { selected_track }
+    }
+    fn wrap(input: usize) -> usize {
+        input % TRACKS_NUM
+    }
+}
+impl Widget for TracksView {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let layout = Layout::default()
+            .direction(ratatui::layout::Direction::Horizontal)
+            .constraints([Constraint::Length(20)].repeat(TRACKS_NUM))
+            .split(area);
+        for i in 0..TRACKS_NUM {
+            Paragraph::new((i + 1).to_string())
+                .block(Block::bordered().border_set(ROUNDED))
+                .style(if self.selected_track == i {
+                    Style::new().bg(Color::Red)
+                } else {
+                    Style::reset()
+                })
+                .render(layout[i], buf);
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct App {
     current_tab: usize,
     exit: bool,
+    selected_track: usize,
 }
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -37,16 +71,19 @@ impl App {
             Tabs::new(vec!["Tracks", "Composition", "Preview"]).select(self.current_tab),
             layout[0],
         );
-        frame.render_widget(
-            match self.current_tab {
-                0 => Paragraph::new("tracks go here mayb")
-                    .block(Block::bordered().border_set(ROUNDED)),
-                1 => Paragraph::new("uhhhh").block(Block::bordered().border_set(ROUNDED)),
-                2 => Paragraph::new("sick af preview").block(Block::bordered().border_set(ROUNDED)),
-                _ => Paragraph::new("what the fuck did you do"),
-            },
-            layout[1],
-        );
+
+        match self.current_tab {
+            0 => frame.render_widget(TracksView::new(self.selected_track), layout[1]),
+            1 => frame.render_widget(
+                Paragraph::new("uhhhh").block(Block::bordered().border_set(ROUNDED)),
+                layout[1],
+            ),
+            2 => frame.render_widget(
+                Paragraph::new("sick af preview").block(Block::bordered().border_set(ROUNDED)),
+                layout[1],
+            ),
+            _ => frame.render_widget(Paragraph::new("what the fuck did you do"), layout[1]),
+        }
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -69,8 +106,11 @@ impl App {
                 let index = SHIFT_NUM_KEYS.iter().position(|&x| x == c);
                 self.current_tab = index.unwrap()
             }
+            KeyCode::Char('H') => {
+                self.selected_track = TracksView::wrap(self.selected_track + TRACKS_NUM - 1)
+            }
+            KeyCode::Char('L') => self.selected_track = TracksView::wrap(self.selected_track + 1),
             KeyCode::Char(' ') => play_sound().unwrap(),
-
             KeyCode::Char('q') => self.exit(),
             _ => {}
         }
@@ -80,7 +120,7 @@ impl App {
         self.exit = true
     }
 }
-impl Widget for &App {
+impl Widget for App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from("Counter Test".bold());
         let block = Block::bordered()
