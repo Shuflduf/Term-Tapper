@@ -113,7 +113,9 @@ impl App {
             KeyCode::Char('L') => self.selected_track = TracksView::wrap(self.selected_track + 1),
             KeyCode::Char(' ') => play_sound().unwrap(),
             KeyCode::Char('q') => self.exit(),
-            _ => {}
+            _ => {
+                println!()
+            }
         }
     }
 
@@ -161,11 +163,11 @@ fn play_sound() -> Result<(), Box<dyn Error>> {
             let _ = conn_out.send(&[NOTE_OFF_MSG, note, VELOCITY]);
         };
 
-        play_note(74, 1);
-        play_note(74, 1);
-        play_note(86, 1);
+        play_note(note_to_midi_value("D5").unwrap(), 1);
+        play_note(note_to_midi_value("D5").unwrap(), 1);
+        play_note(note_to_midi_value("D6").unwrap(), 1);
         play_note(0, 1);
-        play_note(81, 1);
+        play_note(note_to_midi_value("A5").unwrap(), 1);
     }
     sleep(Duration::from_millis(150));
     Ok(())
@@ -176,4 +178,52 @@ fn main() -> io::Result<()> {
     let app_result = App::default().run(&mut terminal);
     ratatui::restore();
     app_result
+}
+
+fn note_to_midi_value(note_name: &str) -> Option<u8> {
+    let mut chars = note_name.chars().peekable();
+    let note_char = chars.next()?;
+
+    let mut is_sharp = false;
+    let mut is_flat = false;
+
+    if let Some(&next_char) = chars.peek() {
+        if next_char == '#' {
+            is_sharp = true;
+            chars.next();
+        } else if next_char == 'b' {
+            is_flat = true;
+            chars.next();
+        }
+    }
+
+    let octave_char = chars.next()?;
+    let octave: i8 = octave_char.to_digit(10)?.try_into().ok()?;
+
+    let mut midi_value: i8;
+
+    match note_char.to_ascii_uppercase() {
+        'C' => midi_value = 0,
+        'D' => midi_value = 2,
+        'E' => midi_value = 4,
+        'F' => midi_value = 5,
+        'G' => midi_value = 7,
+        'A' => midi_value = 9,
+        'B' => midi_value = 11,
+        _ => return None,
+    }
+
+    midi_value += (octave + 1) * 12;
+
+    if is_sharp {
+        midi_value += 1;
+    } else if is_flat {
+        midi_value -= 1;
+    }
+
+    if midi_value >= 0 {
+        Some(midi_value as u8)
+    } else {
+        None
+    }
 }
