@@ -1,92 +1,97 @@
-use crossterm::event::{self, Event};
-use midir::{MidiOutput, MidiOutputPort};
-use ratatui::{Frame, text::Text};
-use std::error::Error;
-use std::io::{Write, stdin, stdout};
-use std::thread::sleep;
-use std::time::Duration;
+use std::io;
 
-fn main() {
-    let mut terminal = ratatui::init();
-    match run() {
-        Ok(_) => (),
-        Err(err) => println!("Error: {}", err),
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    DefaultTerminal, Frame,
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    symbols::border,
+    text::{Line, Text},
+    widgets::{Block, Paragraph, Widget},
+};
+
+#[derive(Debug, Default)]
+pub struct App {
+    counter: u8,
+    exit: bool,
+}
+impl App {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            self.handle_events()?;
+        }
+        Ok(())
     }
 
-    loop {
-        terminal.draw(draw).expect("failed to draw frame");
-        if matches!(event::read().expect("failed to read event"), Event::Key(_)) {
-            break;
-        }
+    fn draw(&self, frame: &mut Frame) {
+        frame.render_widget(self, frame.area());
     }
 
-    ratatui::restore();
-}
-
-fn draw(frame: &mut Frame) {
-    let text = Text::raw("Hello World!");
-    frame.render_widget(text, frame.area());
-}
-
-fn run() -> Result<(), Box<dyn Error>> {
-    let midi_out = MidiOutput::new("My Test Output")?;
-
-    // Get an output port (read from console if multiple are available)
-    let out_ports = midi_out.ports();
-    let out_port: &MidiOutputPort = match out_ports.len() {
-        0 => return Err("no output port found".into()),
-        1 => {
-            println!(
-                "Choosing the only available output port: {}",
-                midi_out.port_name(&out_ports[0]).unwrap()
-            );
-            &out_ports[0]
-        }
-        _ => {
-            println!("\nAvailable output ports:");
-            for (i, p) in out_ports.iter().enumerate() {
-                println!("{}: {}", i, midi_out.port_name(p).unwrap());
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
             }
-            print!("Please select output port: ");
-            stdout().flush()?;
-            let mut input = String::new();
-            stdin().read_line(&mut input)?;
-            out_ports
-                .get(input.trim().parse::<usize>()?)
-                .ok_or("invalid output port selected")?
+            _ => {}
         }
-    };
-
-    println!("\nOpening connection");
-    let mut conn_out = midi_out.connect(out_port, "midir-test")?;
-    println!("Connection open. Listen!");
-    {
-        // Define a new scope in which the closure `play_note` borrows conn_out, so it can be called easily
-        let mut play_note = |note: u8, duration: u64| {
-            const NOTE_ON_MSG: u8 = 0x90;
-            const NOTE_OFF_MSG: u8 = 0x80;
-            const VELOCITY: u8 = 0x64;
-            // We're ignoring errors in here
-            let _ = conn_out.send(&[NOTE_ON_MSG, note, VELOCITY]);
-            sleep(Duration::from_millis(duration * 150));
-            let _ = conn_out.send(&[NOTE_OFF_MSG, note, VELOCITY]);
-        };
-
-        sleep(Duration::from_millis(4 * 150));
-
-        play_note(66, 4);
-        play_note(65, 3);
-        play_note(63, 1);
-        play_note(61, 6);
-        play_note(59, 2);
-        play_note(58, 4);
-        play_note(56, 4);
-        play_note(54, 4);
+        Ok(())
     }
-    sleep(Duration::from_millis(150));
-    println!("\nClosing connection");
-    // This is optional, the connection would automatically be closed as soon as it goes out of scope
-    conn_out.close();
-    println!("Connection closed");
-    Ok(())
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit(),
+            KeyCode::Left => self.decrement_counter(),
+            KeyCode::Right => self.increment_counter(),
+            _ => {}
+        }
+    }
+
+    fn increment_counter(&mut self) {
+        self.counter += 1;
+    }
+
+    fn decrement_counter(&mut self) {
+        self.counter -= 1;
+    }
+
+    fn exit(&mut self) {
+        self.exit = true
+    }
+}
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let title = Line::from("Counter Test".bold());
+        let instructions = Line::from(vec![
+            "Decrement".into(),
+            "<Left>".blue().bold(),
+            "Increment".into(),
+            "<Right>".blue().bold(),
+            "Quit".into(),
+            "<Q>".blue().bold(),
+        ]);
+        let block = Block::bordered()
+            .title(title.centered())
+            .title_bottom(instructions.centered())
+            .border_set(border::THICK);
+
+        let counter_text = Text::from(vec![Line::from(vec![
+            "Value: ".into(),
+            self.counter.to_string().yellow(),
+        ])]);
+
+        Paragraph::new(counter_text)
+            .centered()
+            .block(block)
+            .render(area, buf);
+    }
+}
+
+fn main() -> io::Result<()> {
+    color_eyre::install();
+    let mut terminal = ratatui::init();
+    let app_result = App::default().run(&mut terminal);
+    ratatui::restore();
+    app_result
 }
