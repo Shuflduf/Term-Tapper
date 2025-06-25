@@ -34,12 +34,13 @@ impl Widget for TracksView {
             .split(area);
         for i in 0..TRACKS_NUM {
             Paragraph::new((i + 1).to_string())
-                .block(Block::bordered().border_set(ROUNDED))
-                .style(if self.selected_track == i {
-                    Style::new().bg(Color::Red)
-                } else {
-                    Style::reset()
-                })
+                .block(Block::bordered().border_set(ROUNDED).border_style(
+                    if self.selected_track == i {
+                        Style::new().fg(Color::Red)
+                    } else {
+                        Style::reset()
+                    },
+                ))
                 .render(layout[i], buf);
         }
     }
